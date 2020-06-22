@@ -1,6 +1,7 @@
 import requests
 import re
 import json
+import csv
 from LinkExtractor import LinkExtractor
 
 verbose = True
@@ -14,7 +15,7 @@ jar_path_ext = '.jar'
 sha1_path_ext ='.jar.sha1'
 jar_name_format = '{}-{}.jar'   # artifact id, version
 
-vers_path_pattern = re.compile(r"^(ivy-)?\d+\.\d+\.\d+[.-a-zA-Z0-9]*/$")
+vers_path_pattern = re.compile(r"^(ivy\-)?\d+\.\d+\.\d+[.-a-zA-Z0-9]*/?")
 
 GROUP_NODE = "sub-group"
 ARTIFACT_NODE = "artifact"
@@ -77,21 +78,57 @@ def create_repo_tree(node_name, root_url):
         # we can retrieve the metadata if we choose
         return node_data
 
-def crawl_repo(groupid):
+def crawl_repo(groupid='org.springframework.session'):
     group_path = groupid.replace('.', '/')
     group_url = maven_base_url + group_path + "/"
     return create_repo_tree(groupid, group_url)
 
-if __name__ == '__main__':
-    groupid = 'org.springframework.session'
-    repo_tree = crawl_repo(groupid)
-    print(repo_tree.__repr__())
+def write_repo_tree(repo_tree, filename="repo.json"):
     jsonStr = json.dumps(repo_tree, indent=2)
     print(jsonStr)
-    with open("repo.json", "w") as outfile:
+    with open(filename, "w") as outfile:
         outfile.write(jsonStr)
-    # if verbose:
-    #     print ('group: {}, artifact: {}, latest: {}'.format(group, artifact, latest))
-    #     print('avalable versions: ' + str(versions))
-    # jar_path = get_latest_agent()
-    # print("Validated Agent JAR exists at " + jar_path)
+    return jsonStr
+
+def read_repo_tree(filename="repo-session.json"):
+    with open(filename, 'r') as infile:
+        repo_tree = json.load(infile)
+    return repo_tree
+
+def flatten_repo_node(artifact_list, parent_group, node):
+    if node['type'] == ARTIFACT_NODE:
+        artifact = node['name']
+        group = parent_group
+        artifact_list.append([group, artifact])
+    elif node['type'] == GROUP_NODE:
+        group = node['name']
+        if parent_group:
+            group = parent_group + '.' + group
+        for child_node in node['children']:
+            flatten_repo_node(artifact_list, group, child_node)
+    else:
+        raise Exception("Unknown repo_tree node type: " + str(repo_tree[type]))
+
+def flatten_repo_tree(repo_tree):
+    artifact_list = []
+    flatten_repo_node(artifact_list, "", repo_tree)
+    return artifact_list
+
+def write_artifact_csv(artifact_list, filename='artifacts.csv'):
+    with open(filename, 'w') as outfile:
+        writer = csv.writer(outfile)
+        writer.writerow(['group', 'artifact'])
+        writer.writerows(artifact_list)
+
+def main():
+    print(write_repo_tree(crawl_repo(groupid='org.springframework')))
+    repo_tree = read_repo_tree()
+    # print(json.dumps(repo_tree, indent=2))
+    artifact_list = flatten_repo_tree(repo_tree)
+    write_artifact_csv(artifact_list)
+    # print(json.dumps(artifact_list, indent=2))
+
+if __name__ == '__main__':
+    # test = ['ivy-2.4.0.RELEASE.xml.asc']
+    # print("is_artifact({}) = {}".format(test, str(is_artifact(test))))
+    main()
